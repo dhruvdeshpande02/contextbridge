@@ -29,3 +29,4 @@ class Meeting(Base):
     decisions = relationship("Decision", back_populates="meeting", cascade="all, delete-orphan")
     action_items = relationship("ActionItem", back_populates="meeting", cascade="all, delete-orphan")
     gaps = relationship("Gap", back_populates="meeting", cascade="all, delete-orphan")
+    chunks = relationship("MeetingChunk", back_populates="meeting", cascade="all, delete-orphan")

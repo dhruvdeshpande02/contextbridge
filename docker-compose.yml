@@ -11,8 +11,18 @@ services:
       - ./app:/app/app
       - ./alembic:/app/alembic
 
+  worker:
+    build: .
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=info
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./app:/app/app
+
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: contextbridge
       POSTGRES_PASSWORD: contextbridge
