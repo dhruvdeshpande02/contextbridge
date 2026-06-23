@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build api image
+        run: docker build -t contextbridge-api:ci .
+
+      - name: Smoke test - app imports without errors
+        run: |
+          docker run --rm \
+            -e DATABASE_URL=postgresql://x:x@localhost:5432/x \
+            -e REDIS_URL=redis://localhost:6379/0 \
+            -e SECRET_KEY=ci-test-secret \
+            -e OPENAI_API_KEY=sk-ci-dummy-key \
+            contextbridge-api:ci \
+            python -c "import app.main; print('app imports OK')"
