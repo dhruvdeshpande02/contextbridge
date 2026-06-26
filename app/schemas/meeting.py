@@ -57,3 +57,7 @@ class MeetingQuery(BaseModel):
 class MeetingQueryOut(BaseModel):
     answer: str
     sources: list[uuid.UUID]
+
+
+class MeetingAskOut(BaseModel):
+    answer: str

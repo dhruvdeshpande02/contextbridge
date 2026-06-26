@@ -49,18 +49,38 @@ export interface Decision { id: string; text: string; owner: string | null; conf
 export interface ActionItem { id: string; text: string; assignee: string | null; depends_on: string | null; }
 export interface Gap { id: string; description: string; risk_level: "low" | "medium" | "high"; }
 export interface QueryResult { answer: string; sources: string[]; }
+export interface AskResult { answer: string; }
 
 export const uploadMeeting = (title: string, raw_transcript: string) =>
   request<Meeting>("/meetings/upload", { method: "POST", body: JSON.stringify({ title, raw_transcript }) });
 
+export const uploadMeetingFile = async (title: string, file: File): Promise<Meeting> => {
+  const token = auth.getToken();
+  const form = new FormData();
+  form.append("title", title);
+  form.append("file", file);
+  const res = await fetch(`${BASE}/meetings/upload-file`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Upload failed");
+  }
+  return res.json();
+};
+
 export const listMeetings = () => request<Meeting[]>("/meetings");
 
-export const getMeeting = (id: string) =>
-  request<Meeting[]>("/meetings").then((ms) => ms.find((m) => m.id === id) ?? Promise.reject(new Error("Not found")));
+export const getMeeting = (id: string) => request<Meeting>(`/meetings/${id}`);
 
 export const getDecisions = (id: string) => request<Decision[]>(`/meetings/${id}/decisions`);
 export const getActions = (id: string) => request<ActionItem[]>(`/meetings/${id}/actions`);
 export const getGaps = (id: string) => request<Gap[]>(`/meetings/${id}/gaps`);
+
+export const askMeeting = (id: string, question: string) =>
+  request<AskResult>(`/meetings/${id}/ask`, { method: "POST", body: JSON.stringify({ question }) });
 
 export const queryMeetings = (question: string) =>
   request<QueryResult>("/meetings/query", { method: "POST", body: JSON.stringify({ question }) });

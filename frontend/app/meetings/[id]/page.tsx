@@ -2,17 +2,120 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getMeeting, getDecisions, getActions, getGaps, type Decision, type ActionItem, type Gap } from "@/lib/api";
+import {
+  getMeeting, getDecisions, getActions, getGaps, askMeeting,
+  type Decision, type ActionItem, type Gap,
+} from "@/lib/api";
 import { auth } from "@/lib/auth";
-import { Navbar } from "@/components/navbar";
+import { Sidebar } from "@/components/sidebar";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfidenceBar } from "@/components/confidence-bar";
-import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/input";
 
-const TABS = ["Decisions", "Actions", "Gaps"] as const;
+const TABS = ["Decisions", "Actions", "Gaps", "Ask"] as const;
 type Tab = typeof TABS[number];
 
-const riskColor = { low: "text-emerald-400", medium: "text-amber-400", high: "text-rose-400" };
+const riskStyle = {
+  low:    { text: "#34d399", border: "rgba(52,211,153,0.2)",  bg: "rgba(52,211,153,0.04)"  },
+  medium: { text: "#fbbf24", border: "rgba(251,191,36,0.2)",  bg: "rgba(251,191,36,0.04)"  },
+  high:   { text: "#f87171", border: "rgba(248,113,113,0.2)", bg: "rgba(248,113,113,0.04)" },
+};
+
+const ASK_EXAMPLES = [
+  "What was the final decision on the timeline?",
+  "Who is responsible for the next steps?",
+  "What risks were left unresolved?",
+  "Summarise this meeting in 3 bullet points.",
+];
+
+function AskTab({ meetingId }: { meetingId: string }) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const ask = async (q = question) => {
+    if (!q.trim()) return;
+    setQuestion(q);
+    setAnswer("");
+    setError("");
+    setLoading(true);
+    try {
+      const res = await askMeeting(meetingId, q);
+      setAnswer(res.answer);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to get answer");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="animate-scale-in">
+      {/* Example chips */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {ASK_EXAMPLES.map(q => (
+          <button key={q}
+            onClick={() => ask(q)}
+            className="px-3 py-1.5 rounded-lg text-xs transition-all"
+            style={{
+              border: question === q ? "1px solid rgba(79,126,248,0.4)" : "1px solid rgba(255,255,255,0.06)",
+              background: question === q ? "rgba(79,126,248,0.08)" : "rgba(22,27,39,0.6)",
+              color: question === q ? "#6b96fa" : "#5a6070",
+            }}
+          >{q}</button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div className="rounded-xl p-4 mb-4"
+        style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
+        <Textarea
+          placeholder="Ask anything about this meeting..."
+          value={question}
+          onChange={e => setQuestion(e.target.value)}
+          rows={3}
+          className="text-sm mb-3 bg-transparent border-none focus:ring-0 resize-none text-ink placeholder:text-muted w-full"
+          onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(); }}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted">Ctrl + Enter</span>
+          <Button disabled={!question.trim() || loading} loading={loading} onClick={() => ask()}>
+            {loading ? "Thinking..." : "Ask"}
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="mb-4 rounded-lg px-4 py-3 text-sm text-red-400"
+          style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)" }}>
+          {error}
+        </p>
+      )}
+
+      {loading && (
+        <div className="flex items-center gap-3 py-4">
+          <div className="flex gap-1">
+            {[0,1,2].map(i => (
+              <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#4f7ef8] animate-pulse"
+                style={{ animationDelay: `${i*0.15}s` }} />
+            ))}
+          </div>
+          <p className="text-sm text-muted">Reading this meeting...</p>
+        </div>
+      )}
+
+      {answer && !loading && (
+        <div className="rounded-xl p-5 animate-slide-up"
+          style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Answer</p>
+          <p className="text-sm leading-relaxed text-ink whitespace-pre-wrap">{answer}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MeetingDetailPage() {
   const router = useRouter();
@@ -24,108 +127,171 @@ export default function MeetingDetailPage() {
   const { data: meeting } = useQuery({
     queryKey: ["meeting", id],
     queryFn: () => getMeeting(id),
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === "completed" || status === "failed" ? false : 3000;
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      return s === "completed" || s === "failed" ? false : 3000;
     },
   });
 
   const isReady = meeting?.status === "completed";
-
   const { data: decisions } = useQuery({ queryKey: ["decisions", id], queryFn: () => getDecisions(id), enabled: isReady });
-  const { data: actions } = useQuery({ queryKey: ["actions", id], queryFn: () => getActions(id), enabled: isReady });
-  const { data: gaps } = useQuery({ queryKey: ["gaps", id], queryFn: () => getGaps(id), enabled: isReady });
+  const { data: actions }   = useQuery({ queryKey: ["actions",   id], queryFn: () => getActions(id),   enabled: isReady });
+  const { data: gaps }      = useQuery({ queryKey: ["gaps",      id], queryFn: () => getGaps(id),      enabled: isReady });
+
+  const counts: Partial<Record<Tab, number>> = {
+    Decisions: decisions?.length,
+    Actions:   actions?.length,
+    Gaps:      gaps?.length,
+  };
 
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex items-start justify-between">
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+
+        {/* Header */}
+        <div className="mb-8 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">{meeting?.title ?? "Loading…"}</h1>
+            <h1 className="text-xl font-semibold text-ink tracking-tight">{meeting?.title ?? "Loading..."}</h1>
             {meeting && (
-              <p className="mt-1 text-xs text-muted">
-                {new Date(meeting.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+              <p className="mt-0.5 text-xs text-muted">
+                {new Date(meeting.created_at).toLocaleDateString("en-US", {
+                  month: "long", day: "numeric", year: "numeric",
+                  hour: "2-digit", minute: "2-digit",
+                })}
               </p>
             )}
           </div>
           {meeting && <StatusBadge status={meeting.status} />}
         </div>
 
+        {/* Processing */}
         {(meeting?.status === "pending" || meeting?.status === "processing") && (
-          <Card className="flex items-center gap-3 py-8 justify-center">
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            <span className="text-sm text-muted">Analysing transcript with AI… this takes a few seconds.</span>
-          </Card>
+          <div className="rounded-xl py-10 px-6 flex flex-col items-center text-center"
+            style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(79,126,248,0.1)" }}>
+            <div className="flex gap-1.5 mb-4">
+              {[0,1,2].map(i => (
+                <span key={i} className="h-2 w-2 rounded-full bg-[#4f7ef8] animate-pulse" style={{ animationDelay: `${i*0.15}s` }} />
+              ))}
+            </div>
+            <p className="text-sm font-semibold text-ink mb-1">Analysing your meeting...</p>
+            <p className="text-xs text-muted max-w-xs">
+              Usually 10-20 seconds. AI is extracting decisions, actions, and gaps.
+            </p>
+          </div>
         )}
 
         {meeting?.status === "failed" && (
-          <Card className="text-center py-8">
-            <p className="text-rose-400 text-sm">Processing failed. Please try uploading again.</p>
-          </Card>
+          <div className="rounded-xl p-8 text-center"
+            style={{ background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.15)" }}>
+            <p className="text-sm font-medium text-red-400">Processing failed - please try uploading again.</p>
+          </div>
         )}
 
+        {/* Tabs */}
         {isReady && (
-          <>
-            <div className="mb-5 flex gap-1 border-b border-border">
-              {TABS.map((t) => (
+          <div className="animate-scale-in">
+            <div className="mb-6 inline-flex gap-1 p-1 rounded-lg"
+              style={{ background: "rgba(15,17,23,0.8)", border: "1px solid rgba(255,255,255,0.05)" }}>
+              {TABS.map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                    tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-slate-300"
-                  }`}
+                  className="px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-150"
+                  style={tab === t
+                    ? { background: "#4f7ef8", color: "#fff" }
+                    : { color: "#5a6070" }
+                  }
                 >
                   {t}
-                  <span className="ml-1.5 text-xs opacity-60">
-                    {t === "Decisions" ? decisions?.length : t === "Actions" ? actions?.length : gaps?.length}
-                  </span>
+                  {counts[t] != null && (
+                    <span className="ml-1.5 text-xs opacity-60">{counts[t]}</span>
+                  )}
                 </button>
               ))}
             </div>
 
+            {/* Decisions */}
             {tab === "Decisions" && (
-              <div className="space-y-3">
-                {decisions?.length === 0 && <p className="text-sm text-muted">No decisions extracted.</p>}
-                {decisions?.map((d: Decision) => (
-                  <Card key={d.id}>
-                    <p className="text-sm text-slate-100">{d.text}</p>
-                    <div className="mt-3 flex items-center gap-4">
-                      {d.owner && <span className="text-xs text-muted">Owner: <span className="text-slate-300">{d.owner}</span></span>}
-                      <div className="flex-1"><ConfidenceBar value={d.confidence} /></div>
+              <div className="space-y-2">
+                {decisions?.length === 0 && <p className="text-sm text-muted py-4">No decisions extracted.</p>}
+                {decisions?.map((d: Decision, i) => (
+                  <div key={d.id}
+                    className="rounded-xl p-4 card-hover animate-slide-up"
+                    style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)", animationDelay: `${i*0.04}s` }}>
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 text-xs flex-shrink-0" style={{ color: "#4f7ef8" }}>&#9670;</span>
+                      <div className="flex-1">
+                        <p className="text-sm text-ink leading-relaxed">{d.text}</p>
+                        <div className="mt-2.5 flex items-center gap-4">
+                          {d.owner && (
+                            <span className="text-xs text-muted">Owner: <span className="text-subtle font-medium">{d.owner}</span></span>
+                          )}
+                          <div className="flex-1"><ConfidenceBar value={d.confidence} /></div>
+                        </div>
+                      </div>
                     </div>
-                  </Card>
+                  </div>
                 ))}
               </div>
             )}
 
+            {/* Actions */}
             {tab === "Actions" && (
-              <div className="space-y-3">
-                {actions?.length === 0 && <p className="text-sm text-muted">No action items extracted.</p>}
-                {actions?.map((a: ActionItem) => (
-                  <Card key={a.id}>
-                    <p className="text-sm text-slate-100">{a.text}</p>
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
-                      {a.assignee && <span>Assignee: <span className="text-slate-300">{a.assignee}</span></span>}
-                      {a.depends_on && <span>Blocked by: <span className="text-amber-300">{a.depends_on}</span></span>}
+              <div className="space-y-2">
+                {actions?.length === 0 && <p className="text-sm text-muted py-4">No action items extracted.</p>}
+                {actions?.map((a: ActionItem, i) => (
+                  <div key={a.id}
+                    className="rounded-xl p-4 card-hover animate-slide-up"
+                    style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)", animationDelay: `${i*0.04}s` }}>
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 flex-shrink-0 text-sm" style={{ color: "#6b96fa" }}>&#9675;</span>
+                      <div className="flex-1">
+                        <p className="text-sm text-ink leading-relaxed">{a.text}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          {a.assignee && (
+                            <span className="rounded-md px-2 py-0.5"
+                              style={{ background: "rgba(79,126,248,0.08)", border: "1px solid rgba(79,126,248,0.15)", color: "#6b96fa" }}>
+                              {a.assignee}
+                            </span>
+                          )}
+                          {a.depends_on && (
+                            <span className="rounded-md px-2 py-0.5"
+                              style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)", color: "#f87171" }}>
+                              Blocked: {a.depends_on}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </Card>
+                  </div>
                 ))}
               </div>
             )}
 
+            {/* Gaps */}
             {tab === "Gaps" && (
-              <div className="space-y-3">
-                {gaps?.length === 0 && <p className="text-sm text-muted">No gaps detected.</p>}
-                {gaps?.map((g: Gap) => (
-                  <Card key={g.id} className="flex items-start gap-4">
-                    <span className={`mt-0.5 text-xs font-semibold uppercase ${riskColor[g.risk_level]}`}>{g.risk_level}</span>
-                    <p className="text-sm text-slate-100">{g.description}</p>
-                  </Card>
-                ))}
+              <div className="space-y-2">
+                {gaps?.length === 0 && <p className="text-sm text-muted py-4">No gaps detected.</p>}
+                {gaps?.map((g: Gap, i) => {
+                  const s = riskStyle[g.risk_level];
+                  return (
+                    <div key={g.id}
+                      className="rounded-xl p-4 flex items-start gap-4 animate-slide-up"
+                      style={{ background: s.bg, border: `1px solid ${s.border}`, animationDelay: `${i*0.04}s` }}>
+                      <span className="mt-0.5 text-xs font-bold uppercase tracking-widest flex-shrink-0" style={{ color: s.text }}>
+                        {g.risk_level}
+                      </span>
+                      <p className="text-sm text-ink leading-relaxed">{g.description}</p>
+                    </div>
+                  );
+                })}
               </div>
             )}
-          </>
+
+            {/* Ask */}
+            {tab === "Ask" && <AskTab meetingId={id} />}
+          </div>
         )}
       </main>
     </div>
