@@ -4,72 +4,113 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { queryMeetings, type QueryResult } from "@/lib/api";
 import { auth } from "@/lib/auth";
-import { Navbar } from "@/components/navbar";
+import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
+
+const EXAMPLES = [
+  "What keeps getting deferred?",
+  "Who has the most open action items?",
+  "What risks were raised but never resolved?",
+  "What decisions were made about the roadmap?",
+];
 
 export default function QueryPage() {
   const router = useRouter();
   useEffect(() => { if (!auth.isLoggedIn()) router.replace("/login"); }, [router]);
 
   const [question, setQuestion] = useState("");
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [result,   setResult]   = useState<QueryResult | null>(null);
+  const [error,    setError]    = useState("");
+  const [loading,  setLoading]  = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!question.trim()) return;
+  const run = async (q = question) => {
+    if (!q.trim()) return;
     setError(""); setResult(null); setLoading(true);
-    try {
-      const res = await queryMeetings(question);
-      setResult(res);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Query failed");
-    } finally { setLoading(false); }
+    try { setResult(await queryMeetings(q)); }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : "Query failed"); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-100">Cross-Meeting Query</h1>
-          <p className="mt-1 text-sm text-muted">Ask a question across all your processed meetings.</p>
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+
+        <div className="mb-8">
+          <h1 className="text-xl font-semibold text-ink tracking-tight">Ask AI</h1>
+          <p className="text-sm text-muted mt-0.5">Query across all your processed meetings.</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Example chips */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          {EXAMPLES.map(q => (
+            <button key={q}
+              onClick={() => { setQuestion(q); setResult(null); }}
+              className="px-3 py-1.5 rounded-lg text-xs transition-all"
+              style={{
+                border: question === q ? "1px solid rgba(79,126,248,0.4)" : "1px solid rgba(255,255,255,0.06)",
+                background: question === q ? "rgba(79,126,248,0.08)" : "rgba(22,27,39,0.6)",
+                color: question === q ? "#6b96fa" : "#5a6070",
+              }}
+            >{q}</button>
+          ))}
+        </div>
+
+        {/* Search form */}
+        <div className="rounded-xl p-4 mb-4"
+          style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
           <Textarea
-            placeholder="e.g. What keeps getting deferred? Who hasn't been assigned tasks? What risks were raised?"
+            placeholder="What would you like to know about your meetings?"
             value={question}
-            onChange={(e) => setQuestion(e.target.value)}
+            onChange={e => setQuestion(e.target.value)}
             rows={4}
-            className="text-sm"
+            className="text-sm mb-4 bg-transparent border-none focus:ring-0 resize-none text-ink placeholder:text-muted w-full"
+            onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); }}
           />
-          <div className="flex justify-end">
-            <Button type="submit" loading={loading} disabled={!question.trim()}>
-              {loading ? "Searching…" : "Ask"}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted">Ctrl + Enter</span>
+            <Button disabled={!question.trim() || loading} loading={loading} onClick={() => run()}>
+              {loading ? "Searching…" : "Ask AI"}
             </Button>
           </div>
-        </form>
+        </div>
 
-        {error && <p className="mt-4 text-sm text-rose-400">{error}</p>}
+        {error && (
+          <p className="mb-4 rounded-lg px-4 py-3 text-sm text-red-400"
+            style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.15)" }}>
+            {error}
+          </p>
+        )}
 
-        {result && (
-          <div className="mt-6 space-y-4">
-            <Card>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Answer</p>
-              <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-wrap">{result.answer}</p>
-            </Card>
+        {loading && (
+          <div className="flex items-center gap-3 py-6 animate-scale-in">
+            <div className="flex gap-1">
+              {[0,1,2].map(i => (
+                <span key={i} className="h-1.5 w-1.5 rounded-full bg-[#4f7ef8] animate-pulse"
+                  style={{ animationDelay: `${i*0.15}s` }} />
+              ))}
+            </div>
+            <p className="text-sm text-muted">Reading your meetings…</p>
+          </div>
+        )}
+
+        {result && !loading && (
+          <div className="space-y-4 animate-slide-up">
+            <div className="rounded-xl p-5"
+              style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Answer</p>
+              <p className="text-sm leading-relaxed text-ink whitespace-pre-wrap">{result.answer}</p>
+            </div>
             {result.sources.length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Source meetings</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Sources</p>
                 <div className="flex flex-wrap gap-2">
-                  {result.sources.map((id) => (
+                  {result.sources.map(id => (
                     <Link key={id} href={`/meetings/${id}`}>
-                      <span className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-accent hover:border-accent transition-colors cursor-pointer font-mono">
-                        {id.slice(0, 8)}…
+                      <span className="rounded-lg px-3 py-1 text-xs font-mono cursor-pointer transition-all"
+                        style={{ background: "rgba(79,126,248,0.06)", border: "1px solid rgba(79,126,248,0.15)", color: "#6b96fa" }}>
+                        #{id.slice(0, 8)}
                       </span>
                     </Link>
                   ))}
@@ -82,3 +123,4 @@ export default function QueryPage() {
     </div>
   );
 }
+

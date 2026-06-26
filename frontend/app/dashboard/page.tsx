@@ -5,68 +5,119 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { listMeetings } from "@/lib/api";
 import { auth } from "@/lib/auth";
-import { Navbar } from "@/components/navbar";
+import { Sidebar } from "@/components/sidebar";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 export default function DashboardPage() {
   const router = useRouter();
   useEffect(() => { if (!auth.isLoggedIn()) router.replace("/login"); }, [router]);
 
-  const { data: meetings, isLoading, error } = useQuery({
+  const { data: meetings, isLoading } = useQuery({
     queryKey: ["meetings"],
     queryFn: listMeetings,
     refetchInterval: 5000,
   });
 
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <div className="mb-6 flex items-center justify-between">
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+
+        {/* Header */}
+        <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">Meetings</h1>
-            <p className="mt-0.5 text-sm text-muted">{meetings?.length ?? 0} total</p>
+            <h1 className="text-xl font-semibold text-ink tracking-tight">Your Meetings</h1>
+            <p className="mt-0.5 text-sm text-muted">
+              {meetings != null
+                ? `${meetings.length} meeting${meetings.length !== 1 ? "s" : ""} on record`
+                : "Loading..."}
+            </p>
           </div>
           <Link href="/meetings/upload">
-            <Button>+ Upload Meeting</Button>
+            <Button>+ Upload</Button>
           </Link>
         </div>
 
+        {/* Skeletons */}
         {isLoading && (
-          <div className="flex items-center gap-2 text-sm text-muted">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            Loading meetings…
+          <div className="space-y-2">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-14 rounded-xl shimmer" />
+            ))}
           </div>
         )}
 
-        {error && <p className="text-sm text-rose-400">Failed to load meetings.</p>}
-
-        {meetings?.length === 0 && (
-          <Card className="text-center py-16">
-            <p className="text-muted text-sm">No meetings yet.</p>
+        {/* Empty state */}
+        {!isLoading && meetings?.length === 0 && (
+          <div className="flex flex-col items-start py-16 animate-scale-in">
+            <div className="mb-4 text-3xl" style={{ color: "#4f7ef8", opacity: 0.4 }}>&#128193;</div>
+            <h2 className="text-base font-semibold text-ink mb-1">No meetings yet</h2>
+            <p className="text-sm text-muted mb-6 max-w-sm">
+              Upload a transcript and let the AI surface decisions, actions, and gaps automatically.
+            </p>
             <Link href="/meetings/upload">
-              <Button className="mt-4">Upload your first meeting</Button>
+              <Button>Upload your first meeting</Button>
             </Link>
-          </Card>
+          </div>
         )}
 
-        <div className="space-y-3">
-          {meetings?.map((m) => (
+        {/* Meeting rows */}
+        <div className="space-y-2">
+          {meetings?.map((m, i) => (
             <Link key={m.id} href={`/meetings/${m.id}`}>
-              <Card className="flex items-center justify-between hover:border-accent/50 transition-colors cursor-pointer">
-                <div>
-                  <p className="font-medium text-slate-100">{m.title}</p>
-                  <p className="mt-0.5 text-xs text-muted">
-                    {new Date(m.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </p>
+              <div
+                className="group flex items-center justify-between rounded-xl border px-4 py-3.5 cursor-pointer card-hover animate-slide-up"
+                style={{
+                  borderColor: "rgba(255,255,255,0.06)",
+                  background: "rgba(22,27,39,0.6)",
+                  animationDelay: `${i * 0.04}s`,
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="h-7 w-7 flex-shrink-0 rounded-lg flex items-center justify-center text-xs font-bold"
+                    style={{ background: "rgba(79,126,248,0.1)", color: "#4f7ef8" }}
+                  >
+                    {m.title.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-ink leading-tight">{m.title}</p>
+                    <p className="text-xs text-muted mt-0.5">
+                      {new Date(m.created_at).toLocaleDateString("en-US", {
+                        month: "short", day: "numeric", year: "numeric",
+                        hour: "2-digit", minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
                 </div>
-                <StatusBadge status={m.status} />
-              </Card>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={m.status} />
+                  <span className="text-muted/0 text-xs group-hover:text-muted transition-colors">&#8594;</span>
+                </div>
+              </div>
             </Link>
           ))}
         </div>
+
+        {/* Cross-meeting tip */}
+        {!isLoading && meetings && meetings.length > 0 && (
+          <div
+            className="mt-8 rounded-xl border px-4 py-3 flex items-center gap-3 animate-slide-up"
+            style={{
+              borderColor: "rgba(79,126,248,0.15)",
+              background: "rgba(79,126,248,0.04)",
+              animationDelay: `${(meetings.length * 0.04) + 0.1}s`,
+            }}
+          >
+            <span className="text-sm" style={{ color: "#4f7ef8" }}>&#10022;</span>
+            <p className="text-sm text-muted">
+              Try{" "}
+              <Link href="/query" className="text-ink underline underline-offset-2 hover:text-subtle transition-colors">Ask AI</Link>
+              {" "}&#8212; query across all your meetings at once.
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );
