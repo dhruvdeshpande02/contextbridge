@@ -84,11 +84,14 @@ jobs:
             echo "── Pulling latest code ──"
             git pull origin main
 
-            echo "── Running DB migrations ──"
-            docker compose exec -T api alembic upgrade head
-
             echo "── Rebuilding and restarting services ──"
             docker compose up -d --build --force-recreate --remove-orphans
+
+            echo "── Waiting for api to be healthy ──"
+            sleep 10
+
+            echo "── Running DB migrations ──"
+            docker compose exec -T api alembic upgrade head
 
             echo "── Deployment complete ──"
             docker compose ps
