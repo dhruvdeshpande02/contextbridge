@@ -1,0 +1,94 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Run the test suite
+  # ──────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: contextbridge
+          POSTGRES_USER: contextbridge
+          POSTGRES_PASSWORD: contextbridge123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          TEST_DATABASE_URL: postgresql://contextbridge:contextbridge123@localhost:5432/contextbridge
+          DATABASE_URL: postgresql://contextbridge:contextbridge123@localhost:5432/contextbridge
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-not-for-production
+          OPENAI_API_KEY: sk-test-dummy
+        run: pytest tests/ -v --tb=short
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Deploy to EC2 (only on push to main, not on PRs)
+  # ──────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: SSH deploy to EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/contextbridge
+
+            echo "── Pulling latest code ──"
+            git pull origin main
+
+            echo "── Running DB migrations ──"
+            docker compose exec -T api alembic upgrade head
+
+            echo "── Rebuilding and restarting services ──"
+            docker compose up -d --build --remove-orphans
+
+            echo "── Deployment complete ──"
+            docker compose ps
