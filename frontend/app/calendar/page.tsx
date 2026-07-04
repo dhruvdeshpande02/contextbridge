@@ -111,16 +111,16 @@ function DayPanel({ date, events, onClose }: { date: string; events: CalendarEve
                     <span className="text-[10px] text-muted truncate">{ev.meeting_title}</span>
                   </div>
                   <p className="text-xs text-ink leading-snug">{ev.title}</p>
-                  {ev.type === "action" && ev.meta.assignee && (
-                    <p className="text-[10px] text-muted mt-0.5">Assignee: {ev.meta.assignee as string}</p>
+                  {ev.type === "action" && !!ev.meta.assignee && (
+                    <p className="text-[10px] text-muted mt-0.5">Assignee: {String(ev.meta.assignee)}</p>
                   )}
                   {ev.type === "gap" && (
                     <p className="text-[10px] mt-0.5" style={{ color }}>
-                      Risk: {(ev.meta.risk_level as string).toUpperCase()}
+                      Risk: {String(ev.meta.risk_level ?? "").toUpperCase()}
                     </p>
                   )}
-                  {ev.type === "decision" && ev.meta.owner && (
-                    <p className="text-[10px] text-muted mt-0.5">Owner: {ev.meta.owner as string}</p>
+                  {ev.type === "decision" && !!ev.meta.owner && (
+                    <p className="text-[10px] text-muted mt-0.5">Owner: {String(ev.meta.owner)}</p>
                   )}
                 </div>
               </div>
