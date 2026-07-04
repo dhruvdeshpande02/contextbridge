@@ -88,7 +88,7 @@ jobs:
             docker compose exec -T api alembic upgrade head
 
             echo "── Rebuilding and restarting services ──"
-            docker compose up -d --build --remove-orphans
+            docker compose up -d --build --force-recreate --remove-orphans
 
             echo "── Deployment complete ──"
             docker compose ps
