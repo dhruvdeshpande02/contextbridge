@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -25,6 +25,7 @@ class Meeting(Base):
     raw_transcript = Column(Text, nullable=False)
     status = Column(Enum(MeetingStatus), default=MeetingStatus.pending, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    meeting_date = Column(Date, nullable=True)
 
     decisions = relationship("Decision", back_populates="meeting", cascade="all, delete-orphan")
     action_items = relationship("ActionItem", back_populates="meeting", cascade="all, delete-orphan")

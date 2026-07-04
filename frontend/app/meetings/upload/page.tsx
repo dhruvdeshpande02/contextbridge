@@ -88,6 +88,7 @@ export default function UploadPage() {
 
   const [mode, setMode] = useState<"paste" | "file">("paste");
   const [title, setTitle] = useState("");
+  const [meetingDate, setMeetingDate] = useState("");
   const [transcript, setTranscript] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
@@ -105,8 +106,8 @@ export default function UploadPage() {
     setLoading(true);
     try {
       const meeting = mode === "paste"
-        ? await uploadMeeting(title, transcript)
-        : await uploadMeetingFile(title, file!);
+        ? await uploadMeeting(title, transcript, meetingDate || undefined)
+        : await uploadMeetingFile(title, file!, meetingDate || undefined);
       router.push(`/meetings/${meeting.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -131,15 +132,30 @@ export default function UploadPage() {
             style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <form onSubmit={handleSubmit} className="space-y-5">
 
-              {/* Title */}
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-muted uppercase tracking-wider">Title</label>
-                <Input
-                  placeholder="e.g. Q3 Sprint Planning — Week 24"
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  required
-                />
+              {/* Title + Date row */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-xs font-semibold text-muted uppercase tracking-wider">Title</label>
+                  <Input
+                    placeholder="e.g. Q3 Sprint Planning — Week 24"
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="w-44 flex-shrink-0">
+                  <label className="mb-1.5 block text-xs font-semibold text-muted uppercase tracking-wider">
+                    Meeting date <span className="normal-case font-normal text-muted">(optional)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={meetingDate}
+                    onChange={e => setMeetingDate(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-sm text-ink bg-transparent border focus:outline-none focus:ring-1 focus:ring-[#4f7ef8]"
+                    style={{ border: "1px solid rgba(255,255,255,0.08)", colorScheme: "dark" }}
+                  />
+                  <p className="mt-1 text-[10px] text-muted">If blank, AI infers from transcript.</p>
+                </div>
               </div>
 
               {/* Mode toggle */}

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
@@ -86,6 +86,7 @@ export function Sidebar() {
         {/* Nav links */}
         <nav className="flex flex-col gap-0.5">
           {navLink("/dashboard", "Meetings")}
+          {navLink("/calendar", "Calendar")}
           {navLink("/query", "Ask AI")}
         </nav>
 
@@ -106,3 +107,4 @@ export function Sidebar() {
     </>
   );
 }
+

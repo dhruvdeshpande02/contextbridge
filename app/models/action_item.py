@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, ForeignKey, String, Text
+from sqlalchemy import Column, Date, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -15,5 +15,6 @@ class ActionItem(Base):
     text = Column(Text, nullable=False)
     assignee = Column(String, nullable=True)
     depends_on = Column(String, nullable=True)
+    due_date = Column(Date, nullable=True)
 
     meeting = relationship("Meeting", back_populates="action_items")

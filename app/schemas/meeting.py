@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -9,6 +10,7 @@ from app.models.meeting import MeetingStatus
 class MeetingUpload(BaseModel):
     title: str
     raw_transcript: str
+    meeting_date: date | None = None
 
 
 class MeetingOut(BaseModel):
@@ -16,6 +18,7 @@ class MeetingOut(BaseModel):
     title: str
     status: MeetingStatus
     created_at: datetime
+    meeting_date: date | None = None
 
     class Config:
         from_attributes = True
@@ -36,6 +39,7 @@ class ActionItemOut(BaseModel):
     text: str
     assignee: str | None
     depends_on: str | None
+    due_date: date | None = None
 
     class Config:
         from_attributes = True
@@ -61,3 +65,17 @@ class MeetingQueryOut(BaseModel):
 
 class MeetingAskOut(BaseModel):
     answer: str
+
+
+class CalendarEvent(BaseModel):
+    id: uuid.UUID
+    type: Literal["meeting", "action", "decision", "gap"]
+    title: str
+    date: date
+    meeting_id: uuid.UUID
+    meeting_title: str
+    meta: dict[str, Any] = {}
+
+
+class CalendarOut(BaseModel):
+    events: list[CalendarEvent]

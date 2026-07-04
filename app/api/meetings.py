@@ -1,7 +1,8 @@
 import uuid
+from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -13,6 +14,8 @@ from app.models.meeting_chunk import MeetingChunk
 from app.models.user import User
 from app.schemas.meeting import (
     ActionItemOut,
+    CalendarEvent,
+    CalendarOut,
     DecisionOut,
     GapOut,
     MeetingAskOut,
@@ -35,11 +38,34 @@ def _get_owned_meeting(meeting_id: uuid.UUID, db: Session, user: User) -> Meetin
     return meeting
 
 
+@router.post("/reprocess-dates", status_code=202)
+def reprocess_dates(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Re-queue all completed meetings that have no meeting_date so the Celery
+    task re-runs extraction and populates meeting_date / action due_dates."""
+    meetings = (
+        db.query(Meeting)
+        .filter(
+            Meeting.user_id == user.id,
+            Meeting.status == "completed",
+            Meeting.meeting_date.is_(None),
+        )
+        .all()
+    )
+    for m in meetings:
+        process_meeting_task.delay(str(m.id))
+    return {"queued": len(meetings)}
+
+
 @router.post("/upload", response_model=MeetingOut, status_code=201)
 def upload_meeting(
     payload: MeetingUpload, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
-    meeting = Meeting(user_id=user.id, title=payload.title, raw_transcript=payload.raw_transcript)
+    meeting = Meeting(
+        user_id=user.id,
+        title=payload.title,
+        raw_transcript=payload.raw_transcript,
+        meeting_date=payload.meeting_date,
+    )
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
@@ -51,6 +77,7 @@ def upload_meeting(
 async def upload_meeting_file(
     title: str = Form(...),
     file: UploadFile = File(...),
+    meeting_date: date | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -68,7 +95,7 @@ async def upload_meeting_file(
     if not transcript.strip():
         raise HTTPException(status_code=400, detail="Parsed transcript is empty. Check the file contents.")
 
-    meeting = Meeting(user_id=user.id, title=title, raw_transcript=transcript)
+    meeting = Meeting(user_id=user.id, title=title, raw_transcript=transcript, meeting_date=meeting_date)
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
@@ -97,6 +124,113 @@ def get_actions(meeting_id: uuid.UUID, db: Session = Depends(get_db), user: User
 def get_gaps(meeting_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     meeting = _get_owned_meeting(meeting_id, db, user)
     return db.query(Gap).filter(Gap.meeting_id == meeting.id).all()
+
+
+@router.get("/undated-actions", response_model=list[ActionItemOut])
+def get_undated_actions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return all action items with no due_date across all completed meetings."""
+    return (
+        db.query(ActionItem)
+        .join(Meeting, ActionItem.meeting_id == Meeting.id)
+        .filter(
+            Meeting.user_id == user.id,
+            Meeting.status == "completed",
+            ActionItem.due_date.is_(None),
+        )
+        .all()
+    )
+
+
+@router.get("/calendar", response_model=CalendarOut)
+def get_calendar(
+    start: date = Query(...),
+    end: date = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    meetings = (
+        db.query(Meeting)
+        .filter(
+            Meeting.user_id == user.id,
+            Meeting.status == "completed",
+        )
+        .options(
+            selectinload(Meeting.decisions),
+            selectinload(Meeting.gaps),
+        )
+        .all()
+    )
+
+    events: list[CalendarEvent] = []
+
+    for m in meetings:
+        anchor = m.meeting_date or m.created_at.date()
+        if not (start <= anchor <= end):
+            continue
+
+        events.append(CalendarEvent(
+            id=m.id, type="meeting", title=m.title,
+            date=anchor, meeting_id=m.id, meeting_title=m.title,
+        ))
+
+        for d in m.decisions:
+            events.append(CalendarEvent(
+                id=d.id, type="decision", title=d.text,
+                date=anchor, meeting_id=m.id, meeting_title=m.title,
+                meta={"owner": d.owner, "confidence": d.confidence},
+            ))
+
+        for g in m.gaps:
+            events.append(CalendarEvent(
+                id=g.id, type="gap", title=g.description,
+                date=anchor, meeting_id=m.id, meeting_title=m.title,
+                meta={"risk_level": g.risk_level},
+            ))
+
+    action_items = (
+        db.query(ActionItem)
+        .join(Meeting, ActionItem.meeting_id == Meeting.id)
+        .filter(
+            Meeting.user_id == user.id,
+            ActionItem.due_date.isnot(None),
+            ActionItem.due_date >= start,
+            ActionItem.due_date <= end,
+        )
+        .all()
+    )
+    meeting_cache: dict[uuid.UUID, Meeting] = {m.id: m for m in meetings}
+    for a in action_items:
+        parent = meeting_cache.get(a.meeting_id)
+        events.append(CalendarEvent(
+            id=a.id, type="action", title=a.text,
+            date=a.due_date, meeting_id=a.meeting_id,
+            meeting_title=parent.title if parent else "",
+            meta={"assignee": a.assignee, "depends_on": a.depends_on},
+        ))
+
+    events.sort(key=lambda e: e.date)
+    return CalendarOut(events=events)
+
+
+@router.post("/{meeting_id}/reprocess", response_model=MeetingOut, status_code=202)
+def reprocess_meeting(meeting_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Reset a failed meeting to pending and re-queue it for processing."""
+    meeting = _get_owned_meeting(meeting_id, db, user)
+    if meeting.status != "failed":
+        raise HTTPException(status_code=400, detail="Only failed meetings can be reprocessed")
+
+    # Delete stale child records so the task starts clean
+    db.query(Decision).filter(Decision.meeting_id == meeting.id).delete()
+    db.query(ActionItem).filter(ActionItem.meeting_id == meeting.id).delete()
+    db.query(Gap).filter(Gap.meeting_id == meeting.id).delete()
+    db.query(MeetingChunk).filter(MeetingChunk.meeting_id == meeting.id).delete()
+
+    meeting.status = "pending"
+    db.commit()
+    db.refresh(meeting)
+
+    process_meeting_task.delay(str(meeting.id))
+    return meeting
 
 
 @router.get("/{meeting_id}", response_model=MeetingOut)
@@ -134,6 +268,28 @@ def ask_meeting(
 
 @router.post("/query", response_model=MeetingQueryOut)
 def query_meetings(payload: MeetingQuery, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    all_meetings = (
+        db.query(Meeting)
+        .filter(Meeting.user_id == user.id)
+        .order_by(Meeting.created_at.desc())
+        .all()
+    )
+
+    completed = [m for m in all_meetings if m.status == "completed"]
+
+    if not completed:
+        return MeetingQueryOut(answer="No processed meetings found to search yet.", sources=[])
+
+    metadata_lines = [
+        f"Total meetings uploaded: {len(all_meetings)}",
+        f"Total meetings processed (completed): {len(completed)}",
+        "Meeting list (title | status | date):",
+    ] + [
+        f"  - {m.title} | {m.status} | {m.created_at.strftime('%Y-%m-%d')}"
+        for m in all_meetings
+    ]
+    metadata = "\n".join(metadata_lines)
+
     [query_embedding] = embed_texts([payload.question])
 
     top_chunks = (
@@ -145,9 +301,6 @@ def query_meetings(payload: MeetingQuery, db: Session = Depends(get_db), user: U
         .all()
     )
 
-    if not top_chunks:
-        return MeetingQueryOut(answer="No processed meetings found to search yet.", sources=[])
-
-    answer = answer_with_context(payload.question, [c.text for c in top_chunks])
+    answer = answer_with_context(payload.question, [c.text for c in top_chunks], metadata=metadata)
     sources = list({c.meeting_id for c in top_chunks})
     return MeetingQueryOut(answer=answer, sources=sources)

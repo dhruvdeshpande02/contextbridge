@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from datetime import datetime, timezone
 
 from openai import OpenAI, APITimeoutError, APIConnectionError, RateLimitError, APIStatusError
 
@@ -16,6 +17,7 @@ EXTRACTION_SCHEMA = {
     "schema": {
         "type": "object",
         "properties": {
+            "meeting_date": {"type": ["string", "null"]},
             "decisions": {
                 "type": "array",
                 "items": {
@@ -37,8 +39,9 @@ EXTRACTION_SCHEMA = {
                         "text": {"type": "string"},
                         "assignee": {"type": ["string", "null"]},
                         "depends_on": {"type": ["string", "null"]},
+                        "due_date": {"type": ["string", "null"]},
                     },
-                    "required": ["text", "assignee", "depends_on"],
+                    "required": ["text", "assignee", "depends_on", "due_date"],
                     "additionalProperties": False,
                 },
             },
@@ -55,16 +58,30 @@ EXTRACTION_SCHEMA = {
                 },
             },
         },
-        "required": ["decisions", "action_items", "gaps"],
+        "required": ["meeting_date", "decisions", "action_items", "gaps"],
         "additionalProperties": False,
     },
 }
 
-EXTRACTION_SYSTEM_PROMPT = """You analyze meeting transcripts for a team intelligence tool. Extract three things:
-1. decisions: explicit decisions made, with an owner if named (else null) and a confidence score 0-1 reflecting how clearly the transcript states the decision.
-2. action_items: concrete tasks assigned, with an assignee if named (else null) and depends_on noting any blocking item mentioned (else null).
-3. gaps: risks or unresolved issues that were NOT explicitly flagged by speakers but are implied - e.g. a deadline with no owner, a disagreement left unresolved, a dependency nobody acknowledged. Rate each gap's risk_level as low, medium, or high.
-Only extract what is actually supported by the transcript. Return empty arrays if nothing qualifies."""
+def _extraction_system_prompt() -> str:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return (
+        f"Today's date is {today}. "
+        "You analyze meeting transcripts for a team intelligence tool. Extract:\n"
+        "1. meeting_date: the date the meeting took place, as ISO-8601 (YYYY-MM-DD). "
+        "Infer from explicit dates in the transcript (e.g. 'Monday June 23rd', '2026-06-27'). "
+        "If only a weekday or relative phrase is given (e.g. 'last Thursday'), resolve it relative to today's date. "
+        "Return null if not determinable.\n"
+        "2. decisions: explicit decisions made, with an owner if named (else null) and a confidence score "
+        "0-1 reflecting how clearly the transcript states the decision.\n"
+        "3. action_items: concrete tasks assigned, with an assignee if named (else null), depends_on noting "
+        "any blocking item mentioned (else null), and due_date as ISO-8601 if a deadline is mentioned "
+        "(e.g. 'by July 8th', 'end of sprint') — resolve relative to today's date — else null.\n"
+        "4. gaps: risks or unresolved issues that were NOT explicitly flagged by speakers but are implied — "
+        "e.g. a deadline with no owner, a disagreement left unresolved, a dependency nobody acknowledged. "
+        "Rate each gap's risk_level as low, medium, or high.\n"
+        "Only extract what is actually supported by the transcript. Return empty arrays if nothing qualifies."
+    )
 
 # Errors that are safe to retry (transient). 4xx client errors are not retried.
 _RETRYABLE = (APITimeoutError, APIConnectionError, RateLimitError)
@@ -108,7 +125,7 @@ def extract_meeting_intelligence(transcript: str) -> dict:
         response = client.chat.completions.create(
             model=settings.openai_extraction_model,
             messages=[
-                {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                {"role": "system", "content": _extraction_system_prompt()},
                 {"role": "user", "content": transcript},
             ],
             response_format={"type": "json_schema", "json_schema": EXTRACTION_SCHEMA},
@@ -131,8 +148,9 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     return _call_with_retry(_call)
 
 
-def answer_with_context(question: str, context_chunks: list[str]) -> str:
+def answer_with_context(question: str, context_chunks: list[str], metadata: str = "") -> str:
     context = "\n\n---\n\n".join(context_chunks)
+    metadata_block = f"Meeting database summary:\n{metadata}\n\n" if metadata else ""
 
     def _call():
         response = client.chat.completions.create(
@@ -141,12 +159,17 @@ def answer_with_context(question: str, context_chunks: list[str]) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Answer the user's question using only the meeting excerpts provided. "
-                        "If the excerpts don't contain enough information, say so explicitly. "
-                        "Cite which excerpt(s) you used by quoting a short phrase from them."
+                        "You are a meeting intelligence assistant. "
+                        "Answer the user's question using the meeting database summary and excerpts provided. "
+                        "Use the database summary for counting, listing, or date-related questions. "
+                        "Use the excerpts for content questions. "
+                        "If the information isn't available, say so explicitly."
                     ),
                 },
-                {"role": "user", "content": f"Meeting excerpts:\n\n{context}\n\nQuestion: {question}"},
+                {
+                    "role": "user",
+                    "content": f"{metadata_block}Meeting excerpts:\n\n{context}\n\nQuestion: {question}",
+                },
             ],
             timeout=60,
         )

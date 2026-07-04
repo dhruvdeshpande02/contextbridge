@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
-  getMeeting, getDecisions, getActions, getGaps, askMeeting,
+  getMeeting, getDecisions, getActions, getGaps, askMeeting, reprocessMeeting,
   type Decision, type ActionItem, type Gap,
 } from "@/lib/api";
 import { auth } from "@/lib/auth";
@@ -121,10 +121,11 @@ export default function MeetingDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<Tab>("Decisions");
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => { if (!auth.isLoggedIn()) router.replace("/login"); }, [router]);
 
-  const { data: meeting } = useQuery({
+  const { data: meeting, refetch: refetchMeeting } = useQuery({
     queryKey: ["meeting", id],
     queryFn: () => getMeeting(id),
     refetchInterval: (q) => {
@@ -132,6 +133,16 @@ export default function MeetingDetailPage() {
       return s === "completed" || s === "failed" ? false : 3000;
     },
   });
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await reprocessMeeting(id);
+      await refetchMeeting();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const isReady = meeting?.status === "completed";
   const { data: decisions } = useQuery({ queryKey: ["decisions", id], queryFn: () => getDecisions(id), enabled: isReady });
@@ -182,9 +193,24 @@ export default function MeetingDetailPage() {
         )}
 
         {meeting?.status === "failed" && (
-          <div className="rounded-xl p-8 text-center"
+          <div className="rounded-xl p-8 flex flex-col items-center text-center gap-4"
             style={{ background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.15)" }}>
-            <p className="text-sm font-medium text-red-400">Processing failed - please try uploading again.</p>
+            <div>
+              <p className="text-sm font-medium text-red-400 mb-1">Processing failed</p>
+              <p className="text-xs text-muted">The AI pipeline encountered an error. You can try again below.</p>
+            </div>
+            <Button
+              onClick={handleRetry}
+              loading={retrying}
+              disabled={retrying}
+              style={{
+                background: "rgba(248,113,113,0.12)",
+                border: "1px solid rgba(248,113,113,0.3)",
+                color: "#f87171",
+              }}
+            >
+              {retrying ? "Retrying..." : "Try Again"}
+            </Button>
           </div>
         )}
 
