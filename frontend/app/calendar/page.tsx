@@ -307,7 +307,7 @@ export default function CalendarPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+      <main className="flex-1 px-4 pt-20 pb-24 md:ml-44 md:px-0 md:pl-16 md:pr-10 md:pt-10 md:pb-12">
 
         {/* Header */}
         <div className="mb-7 flex items-start justify-between">
@@ -329,10 +329,10 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        <div className="flex gap-8 items-start">
+        <div className="flex flex-col md:flex-row gap-8 items-start">
 
           {/* ── Calendar panel ── */}
-          <div className="flex-1 min-w-0">
+          <div className="w-full flex-1 min-w-0">
 
             {/* Month nav with dot indicators */}
             <div className="flex items-center justify-between mb-4">
@@ -451,7 +451,7 @@ export default function CalendarPage() {
           </div>
 
           {/* ── Right sidebar ── */}
-          <div className="w-52 flex-shrink-0 flex flex-col gap-4">
+          <div className="w-full md:w-52 flex-shrink-0 flex flex-col gap-4">
 
             {/* Legend */}
             <div className="rounded-xl p-4" data-tour="calendar-legend"

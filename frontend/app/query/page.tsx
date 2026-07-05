@@ -35,7 +35,7 @@ export default function QueryPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+      <main className="flex-1 px-4 pt-20 pb-24 md:ml-44 md:px-0 md:pl-16 md:pr-10 md:pt-10 md:pb-12">
 
         <div className="mb-8">
           <h1 className="text-xl font-semibold text-ink tracking-tight">Ask AI</h1>

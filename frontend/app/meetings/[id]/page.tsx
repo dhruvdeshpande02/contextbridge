@@ -158,7 +158,7 @@ export default function MeetingDetailPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+      <main className="flex-1 px-4 pt-20 pb-24 md:ml-44 md:px-0 md:pl-16 md:pr-10 md:pt-10 md:pb-12">
 
         {/* Header */}
         <div className="mb-8 flex items-start justify-between gap-4">
@@ -217,13 +217,13 @@ export default function MeetingDetailPage() {
         {/* Tabs */}
         {isReady && (
           <div className="animate-scale-in">
-            <div className="mb-6 inline-flex gap-1 p-1 rounded-lg"
+            <div className="mb-6 inline-flex gap-1 p-1 rounded-lg overflow-x-auto max-w-full"
               style={{ background: "rgba(15,17,23,0.8)", border: "1px solid rgba(255,255,255,0.05)" }}>
               {TABS.map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
-                  className="px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-150"
+                  className="px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-150 flex-shrink-0"
                   style={tab === t
                     ? { background: "#4f7ef8", color: "#fff" }
                     : { color: "#5a6070" }

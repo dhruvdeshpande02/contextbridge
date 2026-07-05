@@ -118,22 +118,22 @@ export default function UploadPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+      <main className="flex-1 px-4 pt-20 pb-24 md:ml-44 md:px-0 md:pl-16 md:pr-10 md:pt-10 md:pb-12">
 
         <div className="mb-7">
           <h1 className="text-xl font-semibold text-ink tracking-tight">Upload Meeting</h1>
           <p className="mt-0.5 text-sm text-muted">AI extracts decisions, actions, and gaps automatically.</p>
         </div>
 
-        <div className="flex gap-8 items-start">
+        <div className="flex flex-col md:flex-row gap-8 items-start">
 
           {/* Left: form */}
-          <div className="flex-1 min-w-0 rounded-xl p-6"
+          <div className="w-full flex-1 min-w-0 rounded-xl p-6"
             style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <form onSubmit={handleSubmit} className="space-y-5">
 
               {/* Title + Date row */}
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
                 <div className="flex-1">
                   <label className="mb-1.5 block text-xs font-semibold text-muted uppercase tracking-wider">Title</label>
                   <Input
@@ -143,7 +143,7 @@ export default function UploadPage() {
                     required
                   />
                 </div>
-                <div className="w-44 flex-shrink-0">
+                <div className="w-full sm:w-44 flex-shrink-0">
                   <label className="mb-1.5 block text-xs font-semibold text-muted uppercase tracking-wider">
                     Meeting date <span className="normal-case font-normal text-muted">(optional)</span>
                   </label>
@@ -222,7 +222,7 @@ export default function UploadPage() {
           </div>
 
           {/* Right: info panel */}
-          <div className="w-64 flex-shrink-0 flex flex-col gap-4" data-tour="upload-tips">
+          <div className="w-full md:w-64 flex-shrink-0 flex flex-col gap-4" data-tour="upload-tips">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">What AI extracts</p>
 
             {TIPS.map(t => (

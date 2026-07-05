@@ -22,7 +22,7 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="ml-44 flex-1 pl-16 pr-10 pt-10 pb-12">
+      <main className="flex-1 px-4 pt-20 pb-24 md:ml-44 md:px-0 md:pl-16 md:pr-10 md:pt-10 md:pb-12">
 
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">

@@ -68,10 +68,10 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen overflow-hidden">
 
-      {/* Left — branding panel */}
-      <div className="relative flex w-1/2 flex-col items-center justify-center px-16 overflow-hidden"
+      {/* Left — branding panel (desktop only) */}
+      <div className="relative hidden md:flex w-full md:w-1/2 flex-col items-center justify-center px-6 md:px-16 overflow-hidden"
         style={{ borderRight: "1px solid rgba(255,255,255,0.04)" }}>
 
         <NeuralCanvas />
@@ -105,7 +105,7 @@ export default function RegisterPage() {
       </div>
 
       {/* Right — register form with ambient animation */}
-      <div className="relative flex w-1/2 flex-col items-center justify-center px-16 overflow-hidden">
+      <div className="relative flex w-full md:w-1/2 flex-col items-center justify-center px-6 md:px-16 py-12 md:py-0 overflow-hidden">
 
         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 380 580" preserveAspectRatio="xMidYMid slice">
           {[[320,60],[180,140],[60,220],[300,300],[140,400],[260,480],[80,520],[340,180]].map(([x,y],i) => (
@@ -129,6 +129,14 @@ export default function RegisterPage() {
         ))}
 
         <div className="relative z-10 w-full max-w-sm animate-slide-up">
+          {/* Compact branding — mobile only */}
+          <div className="md:hidden flex flex-col items-center text-center mb-8">
+            <div className="mb-3" style={{ color: "#4f7ef8", width: 44 }}>
+              <BridgeLogo className="w-full h-auto" />
+            </div>
+            <h1 className="text-xl font-bold text-ink tracking-tight">ContextBridge</h1>
+          </div>
+
           <p className="text-xs font-semibold uppercase tracking-widest text-muted mb-6">Create Account</p>
           <form onSubmit={handleSubmit} className="space-y-3">
             <Input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
