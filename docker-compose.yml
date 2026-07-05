@@ -38,11 +38,15 @@ services:
       - "6379:6379"
 
   frontend:
-    build: ./frontend
+    # NEXT_PUBLIC_* vars are baked into the JS bundle at `next build` time, so
+    # this has to be a build arg — setting it under `environment:` only
+    # affects the running container, which is too late for Next.js to see it.
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - api
 

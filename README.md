@@ -211,6 +211,8 @@ Rate limiting is disabled in tests (`RATE_LIMIT_ENABLED=false`, set in `conftest
 | `OPENAI_EXTRACTION_MODEL` | no | `gpt-4o-mini` | Model used for extraction and Q&A |
 | `OPENAI_EMBEDDING_MODEL` | no | `text-embedding-3-small` | Model used for embeddings |
 | `RATE_LIMIT_ENABLED` | no | `true` | Disabled automatically in the test suite; set `false` to turn off locally |
+| `CORS_ORIGINS` | no | `http://localhost:3000` | Comma-separated list of origins the API accepts browser requests from |
+| `NEXT_PUBLIC_API_URL` | no | `http://localhost:8000` | Frontend's API base URL — a Docker **build arg**, not a runtime env var (see `docker-compose.yml`) |
 
 ---
 
