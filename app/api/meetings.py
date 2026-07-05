@@ -1,11 +1,12 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.rate_limit import limiter
 from app.models.action_item import ActionItem
 from app.models.decision import Decision
 from app.models.gap import Gap
@@ -57,8 +58,9 @@ def reprocess_dates(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 
 @router.post("/upload", response_model=MeetingOut, status_code=201)
+@limiter.limit("30/hour")
 def upload_meeting(
-    payload: MeetingUpload, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    request: Request, payload: MeetingUpload, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     meeting = Meeting(
         user_id=user.id,
@@ -74,7 +76,9 @@ def upload_meeting(
 
 
 @router.post("/upload-file", response_model=MeetingOut, status_code=201)
+@limiter.limit("30/hour")
 async def upload_meeting_file(
+    request: Request,
     title: str = Form(...),
     file: UploadFile = File(...),
     meeting_date: date | None = Form(None),
@@ -239,7 +243,9 @@ def get_meeting(meeting_id: uuid.UUID, db: Session = Depends(get_db), user: User
 
 
 @router.post("/{meeting_id}/ask", response_model=MeetingAskOut)
+@limiter.limit("20/minute")
 def ask_meeting(
+    request: Request,
     meeting_id: uuid.UUID,
     payload: MeetingQuery,
     db: Session = Depends(get_db),
@@ -267,7 +273,8 @@ def ask_meeting(
 
 
 @router.post("/query", response_model=MeetingQueryOut)
-def query_meetings(payload: MeetingQuery, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("20/minute")
+def query_meetings(request: Request, payload: MeetingQuery, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     all_meetings = (
         db.query(Meeting)
         .filter(Meeting.user_id == user.id)

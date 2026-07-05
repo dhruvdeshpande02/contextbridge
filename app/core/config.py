@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_extraction_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+    rate_limit_enabled: bool = True
 
     class Config:
         env_file = ".env"

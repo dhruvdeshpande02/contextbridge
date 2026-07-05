@@ -21,6 +21,9 @@ os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy")
+# Tests reuse the same fixture users/logins dozens of times per session — rate
+# limiting would trip on the test suite itself, not just real abuse.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 from app.core.database import Base, get_db  # noqa: E402 — must come after env override
 from app.main import app  # noqa: E402

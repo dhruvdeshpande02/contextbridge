@@ -14,6 +14,7 @@
 | **Meeting-scoped Q&A** | Ask questions scoped to a single meeting from the detail page |
 | **Async processing** | Upload returns instantly; Celery worker handles the OpenAI calls in the background |
 | **LLM retry logic** | Transient OpenAI errors (timeout, rate limit, 5xx) are retried with exponential backoff |
+| **Rate limiting** | Redis-backed, per-IP limits on every route — tighter on auth and OpenAI-backed endpoints |
 
 ---
 
@@ -83,6 +84,7 @@ POST /meetings/{id}/ask       (single-meeting)
 | Embeddings | `text-embedding-3-small` | Fast, cheap, 1536 dims, strong semantic quality |
 | Frontend | Next.js 14 App Router + Tailwind | Modern React stack; SSR-ready |
 | Auth | JWT (python-jose) + bcrypt | Stateless, standard |
+| Rate limiting | `slowapi` + Redis | Shares the existing Redis instance; limits apply across replicas, not per-process |
 
 ### Key design decisions
 
@@ -97,6 +99,9 @@ Without it, GPT sometimes adds commentary, renames fields, or returns malformed 
 
 **Why overlapping chunks for embeddings?**
 A decision spanning a chunk boundary would be missed without overlap. Overlapping by ~20% ensures context is never split at an awkward point.
+
+**Why rate limit with slowapi + Redis instead of an in-memory limiter?**
+An in-memory counter resets on every restart and doesn't work once there's more than one API replica. Redis-backed limits survive restarts and are shared correctly across replicas, at the cost of one round-trip per request — `swallow_errors=True` means a Redis blip degrades to "unlimited" rather than a 500 on every route.
 
 ---
 
@@ -179,6 +184,8 @@ pytest -v
 | `test_ask.py` | Meeting-scoped Q&A: happy path, 400 on unprocessed, 404 on wrong user, 404 on nonexistent, 401 without token |
 | `test_llm.py` | Retry logic: succeeds first try, recovers after transient failures, raises after max retries, 4xx not retried, 5xx retried; extract and embed mocked end-to-end |
 
+Rate limiting is disabled in tests (`RATE_LIMIT_ENABLED=false`, set in `conftest.py`) — the fixtures re-register and re-login dozens of times per session, which would trip the limiter itself rather than testing real abuse.
+
 ---
 
 ## Environment variables
@@ -191,6 +198,7 @@ pytest -v
 | `OPENAI_API_KEY` | yes | — | Your OpenAI key |
 | `OPENAI_EXTRACTION_MODEL` | no | `gpt-4o-mini` | Model used for extraction and Q&A |
 | `OPENAI_EMBEDDING_MODEL` | no | `text-embedding-3-small` | Model used for embeddings |
+| `RATE_LIMIT_ENABLED` | no | `true` | Disabled automatically in the test suite; set `false` to turn off locally |
 
 ---
 
@@ -211,6 +219,8 @@ Full interactive docs at `/docs` when the server is running.
 | POST | `/meetings/{id}/ask` | yes | Q&A scoped to one meeting |
 | POST | `/meetings/query` | yes | Q&A across all meetings |
 
+All routes are rate limited (100/minute default; 10/minute on auth, 30/hour on uploads, 20/minute on the Q&A endpoints) — a 429 comes back with `{"error": "Rate limit exceeded: ..."}` once a client exceeds its limit.
+
 ---
 
 ## Project structure
@@ -226,7 +236,8 @@ contextbridge/
 │   │   ├── database.py         # SQLAlchemy engine + session
 │   │   ├── security.py         # JWT create/verify
 │   │   ├── deps.py             # get_current_user FastAPI dependency
-│   │   └── celery_app.py       # Celery instance
+│   │   ├── celery_app.py       # Celery instance
+│   │   └── rate_limit.py       # slowapi Limiter (Redis-backed)
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── schemas/                # Pydantic request/response shapes
 │   ├── services/
@@ -236,7 +247,7 @@ contextbridge/
 │       └── process_meeting.py  # Celery task: extract + embed
 ├── alembic/                    # DB migrations
 ├── tests/
-│   ├── conftest.py             # Test DB setup, fixtures, auth helpers
+│   ├── conftest.py             # Test DB setup, fixtures, auth helpers (rate limiting disabled)
 │   ├── test_auth.py
 │   ├── test_meetings.py
 │   ├── test_ask.py
