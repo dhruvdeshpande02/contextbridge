@@ -12,6 +12,7 @@
 | **Gap detection** | Surfaces risks speakers did not flag themselves — unowned deadlines, unresolved disagreements, unacknowledged dependencies |
 | **Cross-meeting RAG** | Ask "what keeps getting deferred?" across all your meetings; pgvector finds the relevant chunks, GPT answers from them |
 | **Meeting-scoped Q&A** | Ask questions scoped to a single meeting from the detail page |
+| **Streaming answers** | Q&A responses stream token-by-token over SSE instead of waiting for the full completion |
 | **Async processing** | Upload returns instantly; Celery worker handles the OpenAI calls in the background |
 | **LLM retry logic** | Transient OpenAI errors (timeout, rate limit, 5xx) are retried with exponential backoff |
 | **Rate limiting** | Redis-backed, per-IP limits on every route — tighter on auth and OpenAI-backed endpoints |
@@ -68,6 +69,12 @@ POST /meetings/{id}/ask       (single-meeting)
   -> cosine similarity search on meeting_chunks via pgvector
   -> answer_with_context(question, top_5_chunks)   <- GPT with grounding
   -> return answer  (+ source meeting IDs for cross-meeting)
+
+POST /meetings/query/stream        (cross-meeting, streaming)
+POST /meetings/{id}/ask/stream     (single-meeting, streaming)
+  -> same retrieval as above
+  -> stream_answer_with_context(...) opens the OpenAI call with stream=True
+  -> tokens are forwarded to the client as Server-Sent Events as they arrive
 ```
 
 ---
@@ -102,6 +109,9 @@ A decision spanning a chunk boundary would be missed without overlap. Overlappin
 
 **Why rate limit with slowapi + Redis instead of an in-memory limiter?**
 An in-memory counter resets on every restart and doesn't work once there's more than one API replica. Redis-backed limits survive restarts and are shared correctly across replicas, at the cost of one round-trip per request — `swallow_errors=True` means a Redis blip degrades to "unlimited" rather than a 500 on every route.
+
+**Why SSE instead of WebSockets for streaming Q&A?**
+The data only flows one direction (server to client) and the request is already a plain HTTP POST. SSE over `StreamingResponse` gets token-by-token delivery without a second protocol, a connection upgrade, or extra infra — WebSockets would be solving a problem that isn't there.
 
 ---
 
@@ -183,6 +193,7 @@ pytest -v
 | `test_meetings.py` | Upload, Celery task dispatch, list isolation between users, 404 on wrong owner, empty list on pending meeting |
 | `test_ask.py` | Meeting-scoped Q&A: happy path, 400 on unprocessed, 404 on wrong user, 404 on nonexistent, 401 without token |
 | `test_calendar.py` | Date-range filtering, meeting_date vs created_at fallback, decisions/gaps/actions on the right day, user isolation, sorting |
+| `test_streaming.py` | Streaming Q&A: token frames, `sources` frame ordering, fallback messages, mid-stream error handling, 400/401 guards |
 | `test_llm.py` | Retry logic: succeeds first try, recovers after transient failures, raises after max retries, 4xx not retried, 5xx retried; extract and embed mocked end-to-end |
 
 Rate limiting is disabled in tests (`RATE_LIMIT_ENABLED=false`, set in `conftest.py`) — the fixtures re-register and re-login dozens of times per session, which would trip the limiter itself rather than testing real abuse.
@@ -219,7 +230,9 @@ Full interactive docs at `/docs` when the server is running.
 | GET | `/meetings/{id}/gaps` | yes | Detected gaps with risk levels |
 | GET | `/meetings/calendar` | yes | Meetings/decisions/gaps/actions in a date range |
 | POST | `/meetings/{id}/ask` | yes | Q&A scoped to one meeting |
+| POST | `/meetings/{id}/ask/stream` | yes | Same, streamed token-by-token over SSE |
 | POST | `/meetings/query` | yes | Q&A across all meetings |
+| POST | `/meetings/query/stream` | yes | Same, streamed token-by-token over SSE |
 
 All routes are rate limited (100/minute default; 10/minute on auth, 30/hour on uploads, 20/minute on the Q&A endpoints) — a 429 comes back with `{"error": "Rate limit exceeded: ..."}` once a client exceeds its limit.
 
@@ -243,7 +256,7 @@ contextbridge/
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── schemas/                # Pydantic request/response shapes
 │   ├── services/
-│   │   ├── llm.py              # All OpenAI calls + retry logic
+│   │   ├── llm.py              # All OpenAI calls + retry logic + streaming
 │   │   └── chunking.py         # Transcript chunking for embeddings
 │   └── tasks/
 │       └── process_meeting.py  # Celery task: extract + embed
@@ -253,6 +266,8 @@ contextbridge/
 │   ├── test_auth.py
 │   ├── test_meetings.py
 │   ├── test_ask.py
+│   ├── test_calendar.py
+│   ├── test_streaming.py
 │   └── test_llm.py
 ├── frontend/                   # Next.js 14 app
 │   ├── app/                    # Pages (App Router)

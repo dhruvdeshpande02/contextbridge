@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { queryMeetings, type QueryResult } from "@/lib/api";
+import { streamQueryMeetings } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
@@ -19,17 +19,34 @@ export default function QueryPage() {
   const router = useRouter();
   useEffect(() => { if (!auth.isLoggedIn()) router.replace("/login"); }, [router]);
 
-  const [question, setQuestion] = useState("");
-  const [result,   setResult]   = useState<QueryResult | null>(null);
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
+  const [question,  setQuestion]  = useState("");
+  const [answer,    setAnswer]    = useState("");
+  const [sources,   setSources]   = useState<string[] | null>(null);
+  const [error,     setError]     = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [streaming, setStreaming] = useState(false);
 
   const run = async (q = question) => {
     if (!q.trim()) return;
-    setError(""); setResult(null); setLoading(true);
-    try { setResult(await queryMeetings(q)); }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : "Query failed"); }
-    finally { setLoading(false); }
+    setError(""); setAnswer(""); setSources(null); setLoading(true); setStreaming(false);
+    try {
+      for await (const event of streamQueryMeetings(q)) {
+        if (event.type === "sources") {
+          setSources(event.sources ?? []);
+        } else if (event.type === "token") {
+          setLoading(false);
+          setStreaming(true);
+          setAnswer(prev => prev + event.text);
+        } else if (event.type === "error") {
+          setError(event.message ?? "Query failed");
+        }
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Query failed");
+    } finally {
+      setLoading(false);
+      setStreaming(false);
+    }
   };
 
   return (
@@ -46,7 +63,7 @@ export default function QueryPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           {EXAMPLES.map(q => (
             <button key={q}
-              onClick={() => { setQuestion(q); setResult(null); }}
+              onClick={() => { setQuestion(q); setAnswer(""); setSources(null); }}
               className="px-3 py-1.5 rounded-lg text-xs transition-all"
               style={{
                 border: question === q ? "1px solid rgba(79,126,248,0.4)" : "1px solid rgba(255,255,255,0.06)",
@@ -95,18 +112,21 @@ export default function QueryPage() {
           </div>
         )}
 
-        {result && !loading && (
+        {answer && (
           <div className="space-y-4 animate-slide-up">
             <div className="rounded-xl p-5"
               style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Answer</p>
-              <p className="text-sm leading-relaxed text-ink whitespace-pre-wrap">{result.answer}</p>
+              <p className="text-sm leading-relaxed text-ink whitespace-pre-wrap">
+                {answer}
+                {streaming && <span className="inline-block w-1.5 h-4 ml-0.5 align-middle animate-pulse" style={{ background: "#4f7ef8" }} />}
+              </p>
             </div>
-            {result.sources.length > 0 && (
+            {sources && sources.length > 0 && (
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Sources</p>
                 <div className="flex flex-wrap gap-2">
-                  {result.sources.map(id => (
+                  {sources.map(id => (
                     <Link key={id} href={`/meetings/${id}`}>
                       <span className="rounded-lg px-3 py-1 text-xs font-mono cursor-pointer transition-all"
                         style={{ background: "rgba(79,126,248,0.06)", border: "1px solid rgba(79,126,248,0.15)", color: "#6b96fa" }}>
@@ -123,3 +143,4 @@ export default function QueryPage() {
     </div>
   );
 }
+

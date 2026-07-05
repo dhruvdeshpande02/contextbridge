@@ -148,31 +148,56 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     return _call_with_retry(_call)
 
 
-def answer_with_context(question: str, context_chunks: list[str], metadata: str = "") -> str:
+_ANSWER_SYSTEM_PROMPT = (
+    "You are a meeting intelligence assistant. "
+    "Answer the user's question using the meeting database summary and excerpts provided. "
+    "Use the database summary for counting, listing, or date-related questions. "
+    "Use the excerpts for content questions. "
+    "If the information isn't available, say so explicitly."
+)
+
+
+def _answer_messages(question: str, context_chunks: list[str], metadata: str) -> list[dict]:
     context = "\n\n---\n\n".join(context_chunks)
     metadata_block = f"Meeting database summary:\n{metadata}\n\n" if metadata else ""
+    return [
+        {"role": "system", "content": _ANSWER_SYSTEM_PROMPT},
+        {"role": "user", "content": f"{metadata_block}Meeting excerpts:\n\n{context}\n\nQuestion: {question}"},
+    ]
 
+
+def answer_with_context(question: str, context_chunks: list[str], metadata: str = "") -> str:
     def _call():
         response = client.chat.completions.create(
             model=settings.openai_extraction_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a meeting intelligence assistant. "
-                        "Answer the user's question using the meeting database summary and excerpts provided. "
-                        "Use the database summary for counting, listing, or date-related questions. "
-                        "Use the excerpts for content questions. "
-                        "If the information isn't available, say so explicitly."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"{metadata_block}Meeting excerpts:\n\n{context}\n\nQuestion: {question}",
-                },
-            ],
+            messages=_answer_messages(question, context_chunks, metadata),
             timeout=60,
         )
         return response.choices[0].message.content
 
     return _call_with_retry(_call)
+
+
+def stream_answer_with_context(question: str, context_chunks: list[str], metadata: str = ""):
+    """
+    Same prompt as answer_with_context, but yields the answer token-by-token
+    as it's generated instead of waiting for the full completion.
+
+    Retries only cover opening the stream (transient connection/rate-limit
+    errors before any tokens have been sent) — once tokens start flowing to
+    the client, a retry would mean silently duplicating output, so a mid-stream
+    error just ends the generator and lets the caller surface it.
+    """
+    def _open_stream():
+        return client.chat.completions.create(
+            model=settings.openai_extraction_model,
+            messages=_answer_messages(question, context_chunks, metadata),
+            timeout=60,
+            stream=True,
+        )
+
+    stream = _call_with_retry(_open_stream)
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
-  getMeeting, getDecisions, getActions, getGaps, askMeeting, reprocessMeeting,
+  getMeeting, getDecisions, getActions, getGaps, streamAskMeeting, reprocessMeeting,
   type Decision, type ActionItem, type Gap,
 } from "@/lib/api";
 import { auth } from "@/lib/auth";
@@ -33,6 +33,7 @@ function AskTab({ meetingId }: { meetingId: string }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
 
   const ask = async (q = question) => {
@@ -41,13 +42,22 @@ function AskTab({ meetingId }: { meetingId: string }) {
     setAnswer("");
     setError("");
     setLoading(true);
+    setStreaming(false);
     try {
-      const res = await askMeeting(meetingId, q);
-      setAnswer(res.answer);
+      for await (const event of streamAskMeeting(meetingId, q)) {
+        if (event.type === "token") {
+          setLoading(false);
+          setStreaming(true);
+          setAnswer(prev => prev + event.text);
+        } else if (event.type === "error") {
+          setError(event.message ?? "Failed to get answer");
+        }
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to get answer");
     } finally {
       setLoading(false);
+      setStreaming(false);
     }
   };
 
@@ -106,11 +116,14 @@ function AskTab({ meetingId }: { meetingId: string }) {
         </div>
       )}
 
-      {answer && !loading && (
+      {answer && (
         <div className="rounded-xl p-5 animate-slide-up"
           style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
           <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Answer</p>
-          <p className="text-sm leading-relaxed text-ink whitespace-pre-wrap">{answer}</p>
+          <p className="text-sm leading-relaxed text-ink whitespace-pre-wrap">
+            {answer}
+            {streaming && <span className="inline-block w-1.5 h-4 ml-0.5 align-middle animate-pulse" style={{ background: "#4f7ef8" }} />}
+          </p>
         </div>
       )}
     </div>

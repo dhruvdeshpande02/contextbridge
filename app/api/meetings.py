@@ -1,7 +1,9 @@
+import json
 import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, contains_eager, selectinload
 
@@ -26,11 +28,16 @@ from app.schemas.meeting import (
     MeetingQueryOut,
     MeetingUpload,
 )
-from app.services.llm import answer_with_context, embed_texts
+from app.services.llm import answer_with_context, embed_texts, stream_answer_with_context
 from app.services.transcript_parser import parse_transcript
 from app.tasks.process_meeting import process_meeting_task
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
+
+
+def _sse(payload: dict) -> str:
+    """One Server-Sent-Events frame carrying a JSON payload."""
+    return f"data: {json.dumps(payload)}\n\n"
 
 
 def _get_owned_meeting(meeting_id: uuid.UUID, db: Session, user: User) -> Meeting:
@@ -284,6 +291,44 @@ def ask_meeting(
     return MeetingAskOut(answer=answer)
 
 
+@router.post("/{meeting_id}/ask/stream")
+@limiter.limit("20/minute")
+def ask_meeting_stream(
+    request: Request,
+    meeting_id: uuid.UUID,
+    payload: MeetingQuery,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    meeting = _get_owned_meeting(meeting_id, db, user)
+    if meeting.status != "completed":
+        raise HTTPException(status_code=400, detail="Meeting is not yet processed")
+
+    [query_embedding] = embed_texts([payload.question])
+
+    chunks = (
+        db.query(MeetingChunk)
+        .filter(MeetingChunk.meeting_id == meeting.id)
+        .order_by(MeetingChunk.embedding.cosine_distance(query_embedding))
+        .limit(5)
+        .all()
+    )
+
+    def event_stream():
+        if not chunks:
+            yield _sse({"type": "token", "text": "No content found for this meeting."})
+            yield _sse({"type": "done"})
+            return
+        try:
+            for token in stream_answer_with_context(payload.question, [c.text for c in chunks]):
+                yield _sse({"type": "token", "text": token})
+        except Exception as exc:
+            yield _sse({"type": "error", "message": str(exc)})
+        yield _sse({"type": "done"})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @router.post("/query", response_model=MeetingQueryOut)
 @limiter.limit("20/minute")
 def query_meetings(request: Request, payload: MeetingQuery, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -323,3 +368,59 @@ def query_meetings(request: Request, payload: MeetingQuery, db: Session = Depend
     answer = answer_with_context(payload.question, [c.text for c in top_chunks], metadata=metadata)
     sources = list({c.meeting_id for c in top_chunks})
     return MeetingQueryOut(answer=answer, sources=sources)
+
+
+@router.post("/query/stream")
+@limiter.limit("20/minute")
+def query_meetings_stream(request: Request, payload: MeetingQuery, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    all_meetings = (
+        db.query(Meeting)
+        .filter(Meeting.user_id == user.id)
+        .order_by(Meeting.created_at.desc())
+        .all()
+    )
+
+    completed = [m for m in all_meetings if m.status == "completed"]
+
+    if not completed:
+        def empty_stream():
+            yield _sse({"type": "sources", "sources": []})
+            yield _sse({"type": "token", "text": "No processed meetings found to search yet."})
+            yield _sse({"type": "done"})
+        return StreamingResponse(empty_stream(), media_type="text/event-stream")
+
+    metadata_lines = [
+        f"Total meetings uploaded: {len(all_meetings)}",
+        f"Total meetings processed (completed): {len(completed)}",
+        "Meeting list (title | status | date):",
+    ] + [
+        f"  - {m.title} | {m.status} | {m.created_at.strftime('%Y-%m-%d')}"
+        for m in all_meetings
+    ]
+    metadata = "\n".join(metadata_lines)
+
+    [query_embedding] = embed_texts([payload.question])
+
+    top_chunks = (
+        db.query(MeetingChunk)
+        .join(Meeting, MeetingChunk.meeting_id == Meeting.id)
+        .filter(Meeting.user_id == user.id)
+        .order_by(MeetingChunk.embedding.cosine_distance(query_embedding))
+        .limit(5)
+        .all()
+    )
+    sources = [str(mid) for mid in {c.meeting_id for c in top_chunks}]
+
+    def event_stream():
+        # Sources are known up front (from the vector search), so send them
+        # before the first token — the UI can render source chips immediately
+        # instead of waiting for the answer to finish.
+        yield _sse({"type": "sources", "sources": sources})
+        try:
+            for token in stream_answer_with_context(payload.question, [c.text for c in top_chunks], metadata=metadata):
+                yield _sse({"type": "token", "text": token})
+        except Exception as exc:
+            yield _sse({"type": "error", "message": str(exc)})
+        yield _sse({"type": "done"})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

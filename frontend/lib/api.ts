@@ -48,8 +48,6 @@ export interface Meeting {
 export interface Decision { id: string; text: string; owner: string | null; confidence: number; }
 export interface ActionItem { id: string; text: string; assignee: string | null; depends_on: string | null; due_date: string | null; }
 export interface Gap { id: string; description: string; risk_level: "low" | "medium" | "high"; }
-export interface QueryResult { answer: string; sources: string[]; }
-export interface AskResult { answer: string; }
 
 export type CalendarEventType = "meeting" | "action" | "decision" | "gap";
 export interface CalendarEvent {
@@ -94,11 +92,59 @@ export const getDecisions = (id: string) => request<Decision[]>(`/meetings/${id}
 export const getActions = (id: string) => request<ActionItem[]>(`/meetings/${id}/actions`);
 export const getGaps = (id: string) => request<Gap[]>(`/meetings/${id}/gaps`);
 
-export const askMeeting = (id: string, question: string) =>
-  request<AskResult>(`/meetings/${id}/ask`, { method: "POST", body: JSON.stringify({ question }) });
+// ─── Streaming Q&A (Server-Sent Events over a POST body) ────────────────────
+// The non-streaming POST /ask and /query REST endpoints still exist on the
+// backend (documented in the README, covered by tests) — this client only
+// talks to the streaming variants since that's what the UI uses.
+// EventSource can't send a POST body or an Authorization header, so we read
+// the response body as a stream and split it into SSE frames by hand.
 
-export const queryMeetings = (question: string) =>
-  request<QueryResult>("/meetings/query", { method: "POST", body: JSON.stringify({ question }) });
+export interface StreamEvent {
+  type: "token" | "sources" | "done" | "error";
+  text?: string;
+  sources?: string[];
+  message?: string;
+}
+
+async function* streamSSE(path: string, body: unknown): AsyncGenerator<StreamEvent> {
+  const token = auth.getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Request failed");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sepIndex: number;
+    while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, sepIndex);
+      buffer = buffer.slice(sepIndex + 2);
+      const dataLine = frame.split("\n").find(l => l.startsWith("data: "));
+      if (dataLine) yield JSON.parse(dataLine.slice("data: ".length)) as StreamEvent;
+    }
+  }
+}
+
+export const streamAskMeeting = (id: string, question: string) =>
+  streamSSE(`/meetings/${id}/ask/stream`, { question });
+
+export const streamQueryMeetings = (question: string) =>
+  streamSSE("/meetings/query/stream", { question });
 
 export const getCalendar = (start: string, end: string) =>
   request<{ events: CalendarEvent[] }>(`/meetings/calendar?start=${start}&end=${end}`);
