@@ -34,7 +34,7 @@ export default function DashboardPage() {
                 : "Loading..."}
             </p>
           </div>
-          <Link href="/meetings/upload">
+          <Link href="/meetings/upload" data-tour="upload-button">
             <Button>+ Upload</Button>
           </Link>
         </div>

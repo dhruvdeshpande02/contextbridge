@@ -159,7 +159,7 @@ export default function UploadPage() {
               </div>
 
               {/* Mode toggle */}
-              <div>
+              <div data-tour="upload-mode-toggle">
                 <div className="mb-3 inline-flex gap-1 p-1 rounded-lg"
                   style={{ background: "rgba(15,17,23,0.8)", border: "1px solid rgba(255,255,255,0.05)" }}>
                   {(["paste", "file"] as const).map(m => (
@@ -222,7 +222,7 @@ export default function UploadPage() {
           </div>
 
           {/* Right: info panel */}
-          <div className="w-64 flex-shrink-0 flex flex-col gap-4">
+          <div className="w-64 flex-shrink-0 flex flex-col gap-4" data-tour="upload-tips">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">What AI extracts</p>
 
             {TIPS.map(t => (

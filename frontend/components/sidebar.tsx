@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { BridgeLogo } from "@/components/brain-illustration";
+import { useWalkthrough } from "@/components/walkthrough/walkthrough-context";
 
 function LogoutModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
@@ -41,13 +42,14 @@ export function Sidebar() {
   const router = useRouter();
   const path   = usePathname();
   const [showLogout, setShowLogout] = useState(false);
+  const { start } = useWalkthrough();
 
   const confirmLogout = () => { auth.clearToken(); router.push("/login"); };
 
-  const navLink = (href: string, label: string) => {
+  const navLink = (href: string, label: string, tourId?: string) => {
     const active = path.startsWith(href);
     return (
-      <Link href={href}>
+      <Link href={href} data-tour={tourId}>
         <span className={`block px-3 py-2 rounded-lg text-base transition-all duration-150 ${
           active ? "text-ink font-medium" : "text-muted hover:text-subtle"
         }`}>
@@ -85,14 +87,27 @@ export function Sidebar() {
 
         {/* Nav links */}
         <nav className="flex flex-col gap-0.5">
-          {navLink("/dashboard", "Meetings")}
-          {navLink("/calendar", "Calendar")}
-          {navLink("/query", "Ask AI")}
+          {navLink("/dashboard", "Meetings", "nav-meetings")}
+          {navLink("/calendar", "Calendar", "nav-calendar")}
+          {navLink("/query", "Ask AI", "nav-ask-ai")}
         </nav>
 
         <div className="flex-1" />
 
         <div className="h-px w-full mb-3" style={{ background: "rgba(255,255,255,0.05)" }} />
+
+        <button
+          onClick={start}
+          className="flex items-center gap-2 px-3 py-2 w-full rounded-lg transition-colors text-base text-muted hover:text-subtle"
+        >
+          <span
+            className="flex-shrink-0 flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold"
+            style={{ border: "1px solid currentColor" }}
+          >
+            ?
+          </span>
+          Help
+        </button>
 
         <button
           onClick={() => setShowLogout(true)}
@@ -107,4 +122,3 @@ export function Sidebar() {
     </>
   );
 }
-

@@ -454,7 +454,7 @@ export default function CalendarPage() {
           <div className="w-52 flex-shrink-0 flex flex-col gap-4">
 
             {/* Legend */}
-            <div className="rounded-xl p-4"
+            <div className="rounded-xl p-4" data-tour="calendar-legend"
               style={{ background: "rgba(22,27,39,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Legend</p>
               {(Object.entries(TYPE_COLOR) as [CalendarEventType, string][]).map(([type, color]) => (

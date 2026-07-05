@@ -58,7 +58,7 @@ export default function QueryPage() {
         </div>
 
         {/* Search form */}
-        <div className="rounded-xl p-4 mb-4"
+        <div className="rounded-xl p-4 mb-4" data-tour="query-textarea"
           style={{ background: "rgba(22,27,39,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
           <Textarea
             placeholder="What would you like to know about your meetings?"
@@ -123,4 +123,3 @@ export default function QueryPage() {
     </div>
   );
 }
-
