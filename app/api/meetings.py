@@ -2,7 +2,8 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func
+from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -152,11 +153,20 @@ def get_calendar(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Anchor date = explicit meeting_date, falling back to the upload day.
+    # Filtering on this expression in SQL means we only ever fetch (and
+    # eager-load decisions/gaps for) meetings that actually fall in the
+    # requested window, instead of loading every completed meeting and
+    # discarding most of them in Python.
+    anchor_date = func.coalesce(Meeting.meeting_date, func.date(Meeting.created_at))
+
     meetings = (
         db.query(Meeting)
         .filter(
             Meeting.user_id == user.id,
             Meeting.status == "completed",
+            anchor_date >= start,
+            anchor_date <= end,
         )
         .options(
             selectinload(Meeting.decisions),
@@ -169,8 +179,6 @@ def get_calendar(
 
     for m in meetings:
         anchor = m.meeting_date or m.created_at.date()
-        if not (start <= anchor <= end):
-            continue
 
         events.append(CalendarEvent(
             id=m.id, type="meeting", title=m.title,
@@ -191,24 +199,28 @@ def get_calendar(
                 meta={"risk_level": g.risk_level},
             ))
 
+    # Action item due_date can fall in-range even when its parent meeting's
+    # anchor date doesn't, so this is a separate query — join + contains_eager
+    # pulls the parent title in the same round trip instead of a second query
+    # or an in-Python lookup cache.
     action_items = (
         db.query(ActionItem)
         .join(Meeting, ActionItem.meeting_id == Meeting.id)
+        .options(contains_eager(ActionItem.meeting))
         .filter(
             Meeting.user_id == user.id,
+            Meeting.status == "completed",
             ActionItem.due_date.isnot(None),
             ActionItem.due_date >= start,
             ActionItem.due_date <= end,
         )
         .all()
     )
-    meeting_cache: dict[uuid.UUID, Meeting] = {m.id: m for m in meetings}
     for a in action_items:
-        parent = meeting_cache.get(a.meeting_id)
         events.append(CalendarEvent(
             id=a.id, type="action", title=a.text,
             date=a.due_date, meeting_id=a.meeting_id,
-            meeting_title=parent.title if parent else "",
+            meeting_title=a.meeting.title,
             meta={"assignee": a.assignee, "depends_on": a.depends_on},
         ))
 

@@ -182,6 +182,7 @@ pytest -v
 | `test_auth.py` | Register, login, duplicate email, wrong password, protected route guard |
 | `test_meetings.py` | Upload, Celery task dispatch, list isolation between users, 404 on wrong owner, empty list on pending meeting |
 | `test_ask.py` | Meeting-scoped Q&A: happy path, 400 on unprocessed, 404 on wrong user, 404 on nonexistent, 401 without token |
+| `test_calendar.py` | Date-range filtering, meeting_date vs created_at fallback, decisions/gaps/actions on the right day, user isolation, sorting |
 | `test_llm.py` | Retry logic: succeeds first try, recovers after transient failures, raises after max retries, 4xx not retried, 5xx retried; extract and embed mocked end-to-end |
 
 Rate limiting is disabled in tests (`RATE_LIMIT_ENABLED=false`, set in `conftest.py`) — the fixtures re-register and re-login dozens of times per session, which would trip the limiter itself rather than testing real abuse.
@@ -216,6 +217,7 @@ Full interactive docs at `/docs` when the server is running.
 | GET | `/meetings/{id}/decisions` | yes | Extracted decisions with confidence |
 | GET | `/meetings/{id}/actions` | yes | Extracted action items with assignees |
 | GET | `/meetings/{id}/gaps` | yes | Detected gaps with risk levels |
+| GET | `/meetings/calendar` | yes | Meetings/decisions/gaps/actions in a date range |
 | POST | `/meetings/{id}/ask` | yes | Q&A scoped to one meeting |
 | POST | `/meetings/query` | yes | Q&A across all meetings |
 
