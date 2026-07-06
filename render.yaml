@@ -17,7 +17,6 @@ services:
     name: contextbridge-api
     runtime: python
     plan: free
-    pythonVersion: "3.12"
     buildCommand: pip install -r requirements.txt
     startCommand: |
       python -c "
