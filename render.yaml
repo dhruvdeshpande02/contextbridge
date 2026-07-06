@@ -1,0 +1,81 @@
+databases:
+  - name: contextbridge-db
+    databaseName: contextbridge
+    user: contextbridge
+    plan: free
+    postgresMajorVersion: 16
+
+services:
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  - type: redis
+    name: contextbridge-redis
+    plan: free
+    ipAllowList: []   # internal only
+
+  # ── API ────────────────────────────────────────────────────────────────────
+  - type: web
+    name: contextbridge-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: |
+      python -c "
+      from sqlalchemy import create_engine, text
+      import os
+      e = create_engine(os.environ['DATABASE_URL'])
+      with e.connect() as c:
+          c.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
+          c.commit()
+      " && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: contextbridge-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: contextbridge-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false   # you'll paste this in the Render dashboard
+
+  # ── Celery Worker ──────────────────────────────────────────────────────────
+  - type: worker
+    name: contextbridge-worker
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.core.celery_app.celery_app worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: contextbridge-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: contextbridge-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        fromService:
+          name: contextbridge-api
+          type: web
+          property: SECRET_KEY
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  - type: web
+    name: contextbridge-frontend
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci --quiet && npm run build
+    startCommand: node server.js
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false   # set to https://contextbridge-api.onrender.com after first deploy
