@@ -39,9 +39,9 @@ services:
           type: redis
           property: connectionString
       - key: SECRET_KEY
-        generateValue: true
+        sync: false   # generate once: python -c "import secrets; print(secrets.token_hex(32))"
       - key: OPENAI_API_KEY
-        sync: false   # you'll paste this in the Render dashboard
+        sync: false
 
   # ── Celery Worker ──────────────────────────────────────────────────────────
   - type: worker
@@ -61,10 +61,7 @@ services:
           type: redis
           property: connectionString
       - key: SECRET_KEY
-        fromService:
-          name: contextbridge-api
-          type: web
-          property: SECRET_KEY
+        sync: false   # must be the same value as API's SECRET_KEY
       - key: OPENAI_API_KEY
         sync: false
 
@@ -78,4 +75,4 @@ services:
     startCommand: node server.js
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        sync: false   # set to https://contextbridge-api.onrender.com after first deploy
+        sync: false   # set to https://contextbridge-api.onrender.com after first API deploy
